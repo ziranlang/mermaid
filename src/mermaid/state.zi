@@ -1,0 +1,108 @@
+#scope_module
+// Flat state machines with aliases, descriptions and initial/final pseudostates.
+
+ParseState :: (source: string, statements: []Statement, count: s32, graph: *Graph) -> Error {
+    direction := false
+    statement_at: s32 = 0
+    while statement_at < count {
+        line := statements[statement_at].text
+        statement_at += 1
+        if (line == "state") || (line == "direction") ||
+           (line == "note") || (line == "end") ||
+           (line == "hide") { return .UNSUPPORTED }
+        if StartsWith(line, "direction ") {
+            if direction { return .UNSUPPORTED }
+            parsed := ParseDirection(Trim(line[10:line.count]))
+            if cast(s32)parsed < 0 { return .UNSUPPORTED }
+            graph.direction = parsed; direction = true; continue
+        }
+        rest := line
+        from: s32
+        if StartsWith(rest, "state \"") {
+            after := rest[7:rest.count]
+            closing := IndexByte(after, cast(u8)#char "\"")
+            if closing < 0 { return .UNSUPPORTED }
+            label := after[0:closing]
+            status := CheckLabel(label)
+            if status != .NONE { return status }
+            rest = TrimStart(after[closing + 1:after.count])
+            if !StartsWith(rest, "as ") { return .UNSUPPORTED }
+            rest = rest[3:rest.count]
+            id := ParseIdentifier(rest); rest = id.rest
+
+            if id.at < 0 { return ErrorFromInt(id.at) }
+            from = GraphNode(graph, id.value)
+            if from < 0 { return ErrorFromInt(from) }
+            if Trim(rest).count != 0 { return .UNSUPPORTED }
+            status = AddDescription(*graph.nodes[from], label)
+            if status != .NONE { return status }
+            continue
+        }
+        if StartsWith(rest, "[*]") {
+            rest = rest[3:rest.count]
+            from = GraphNode(graph, "[initial]")
+            if from < 0 { return ErrorFromInt(from) }
+            LabelSet(*graph.nodes[from].label, "● initial")
+        } else {
+            id := ParseIdentifier(rest); rest = id.rest
+
+            if id.at < 0 { return ErrorFromInt(id.at) }
+            if (CaseInsensitiveEqual(id.value, "accTitle") || CaseInsensitiveEqual(id.value, "accDescr")) && StartsWith(TrimStart(rest), ":") { return .UNSUPPORTED }
+            from = GraphNode(graph, id.value)
+            if from < 0 { return ErrorFromInt(from) }
+        }
+        rest = Trim(rest)
+        if rest.count == 0 && !LabelEqualText(*graph.nodes[from].id, "[initial]") { continue }
+        if StartsWith(rest, ":") && !StartsWith(rest, "::") {
+            if LabelEqualText(*graph.nodes[from].id, "[initial]") { return .UNSUPPORTED }
+            status := AddDescription(*graph.nodes[from], Trim(rest[1:rest.count]))
+            if status != .NONE { return status }
+            continue
+        }
+        if !StartsWith(rest, "-->") { return .UNSUPPORTED }
+        rest = TrimStart(rest[3:rest.count])
+        to: s32
+        if StartsWith(rest, "[*]") {
+            rest = rest[3:rest.count]
+            to = GraphNode(graph, "[final]")
+            if to < 0 { return ErrorFromInt(to) }
+            LabelSet(*graph.nodes[to].label, "◎ final")
+        } else {
+            id := ParseIdentifier(rest); rest = id.rest
+
+            if id.at < 0 { return ErrorFromInt(id.at) }
+            to = GraphNode(graph, id.value)
+            if to < 0 { return ErrorFromInt(to) }
+        }
+        label: Label
+        trimmed := Trim(rest)
+        if StartsWith(trimmed, ":") && !StartsWith(trimmed, "::") {
+            text := Trim(trimmed[1:trimmed.count])
+            status := CheckLabel(text)
+            if status != .NONE { return status }
+            if !LabelSet(*label, text) { return .UNSUPPORTED }
+        } else if trimmed.count != 0 { return .UNSUPPORTED }
+        if graph.edge_count == MAX_EDGES { return .LIMIT }
+        edge := *graph.edges[graph.edge_count]
+        edge.from = from; edge.to = to; LabelSetLabel(*edge.label, *label)
+        edge.source_tip = cast(u32)0x2500; edge.target_tip = cast(u32)0x25c4; edge.dashed = false
+        graph.edge_count += 1
+    }
+    if graph.node_count == 0 { return .UNSUPPORTED }
+    return .NONE
+}
+
+AddDescription :: (node: *Node, description: string) -> Error {
+    status := CheckLabel(description)
+    if status != .NONE { return status }
+    if !node.declared {
+        if !LabelSet(*node.label, description) { return .UNSUPPORTED }
+        node.declared = true
+        return .NONE
+    }
+    if node.member_count == 16 { return .LIMIT }
+    VecResize(node.members, cast(s64)node.member_count + 1)
+    if !LabelSet(*node.members[node.member_count], description) { return .UNSUPPORTED }
+    node.member_count += 1
+    return .NONE
+}

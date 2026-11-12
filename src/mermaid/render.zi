@@ -1,0 +1,282 @@
+#scope_module
+// Orthogonal graph layout with unique edge lanes and endpoint reservations.
+
+
+NodeLines :: struct {
+    values: Vec(string)
+    decision: bool
+    count: s32
+}
+
+RenderGraph :: (graph: *Graph, max_width: s64, canvas: *Canvas) -> Error {
+    horizontal := graph.direction == .RIGHT || graph.direction == .LEFT
+    labels: [MAX_NODES]NodeLines
+    label_width: s32 = 0
+    box_cross: s32 = 0
+    counts: [MAX_NODES]s32
+    ports: [MAX_EDGES][2]s32
+    index: s32 = 0
+    while index < graph.node_count {
+        BuildNodeLines(*graph.nodes[index], *labels[index])
+        line_at: s32 = 0
+        while line_at < labels[index].count {
+            width := TextWidth(labels[index].values[line_at])
+            if line_at == 0 && labels[index].decision { width += 2 }
+            if !horizontal && width + 4 > box_cross { box_cross = width + 4 }
+            line_at += 1
+        }
+        if horizontal && labels[index].count + 2 > box_cross { box_cross = labels[index].count + 2 }
+        index += 1
+    }
+    index = 0
+    while index < graph.edge_count {
+        width := LabelWidth(*graph.edges[index].label)
+        target := LabelWidth(*graph.edges[index].target_label)
+        if width > label_width { label_width = width }
+        if target > label_width { label_width = target }
+        source := counts[graph.edges[index].from]; counts[graph.edges[index].from] += 1
+        target = counts[graph.edges[index].to]; counts[graph.edges[index].to] += 1
+        ports[index][0] = source; ports[index][1] = target
+        index += 1
+    }
+    stride := 1
+    if horizontal { stride = label_width + 2 }
+    sizes: [MAX_NODES]s32
+    starts: [MAX_NODES]s32
+    index = 0
+    while index < graph.node_count {
+        line_width := 0; line_at := 0
+        while line_at < labels[index].count {
+            width := TextWidth(labels[index].values[line_at])
+            if line_at == 0 && labels[index].decision { width += 2 }
+            if width > line_width { line_width = width }
+            line_at += 1
+        }
+        if horizontal {
+            desired := ifx line_width + 4 > counts[index] * stride + 2 then line_width + 4 else counts[index] * stride + 2
+            sizes[index] = cast(s32)desired
+        } else { sizes[index] = labels[index].count + counts[index] + 2 }
+        index += 1
+    }
+    along: s32 = 0; index = 0
+    while index < graph.node_count {
+        order := index
+        if graph.direction == .UP || graph.direction == .LEFT { order = graph.node_count - 1 - index }
+        starts[order] = along; along += sizes[order] + 2
+        index += 1
+    }
+    first_lane := box_cross
+    if horizontal { first_lane += 4 } else { first_lane += label_width + 5 }
+    across := box_cross
+    if graph.edge_count > 0 { across = first_lane + graph.edge_count * 2 - 1 }
+    width: s32; height: s32
+    if horizontal { width = along - 2; height = across } else { width = across; height = along - 2 }
+    if width > max_width { return .TOO_WIDE }
+    if cast(s64)width * cast(s64)height > MAX_CELLS { return .LIMIT }
+    canvas.width = width; canvas.height = height; canvas.horizontal = horizontal
+    CanvasFill(canvas, cast(u32)#char " ", cast(u8)Role.EDGE)
+    index = 0
+    while index < graph.node_count {
+        start := starts[index]; end := start + sizes[index] - 1
+        top_left := cast(u32)0x250c; top_right := cast(u32)0x2510
+        bottom_left := cast(u32)0x2514; bottom_right := cast(u32)0x2518
+        if graph.nodes[index].shape == .STADIUM {
+            top_left = 0x256d; top_right = 0x256e; bottom_left = 0x2570; bottom_right = 0x256f
+        }
+        CanvasSet(canvas, 0, start, top_left, Role.NODE)
+        CanvasSet(canvas, box_cross - 1, start, top_right, Role.NODE)
+        CanvasSet(canvas, 0, end, bottom_left, Role.NODE)
+        CanvasSet(canvas, box_cross - 1, end, bottom_right, Role.NODE)
+        x: s32 = 1
+        while x < box_cross - 1 {
+            CanvasSet(canvas, x, start, cast(u32)0x2500, Role.NODE)
+            CanvasSet(canvas, x, end, cast(u32)0x2500, Role.NODE)
+            x += 1
+        }
+        y: s32 = start + 1
+        while y < end {
+            CanvasSet(canvas, 0, y, cast(u32)0x2502, Role.NODE)
+            CanvasSet(canvas, box_cross - 1, y, cast(u32)0x2502, Role.NODE)
+            y += 1
+        }
+        line_at := 0
+        while line_at < labels[index].count {
+            x: s64 = 2; y := cast(s64)start + line_at + 1
+            if horizontal { x = cast(s64)start + 2; y = cast(s64)line_at + 1 }
+            if line_at == 0 && labels[index].decision {
+                PutString(canvas, x, y, "◇ "); x += 2
+            }
+            PutString(canvas, x, y, labels[index].values[line_at])
+            line_at += 1
+        }
+        index += 1
+    }
+    index = 0
+    while index < graph.edge_count {
+        edge := *graph.edges[index]
+        source := OffsetPort(starts[:], labels[:], edge.from, ports[index][0], horizontal, stride)
+        target := OffsetPort(starts[:], labels[:], edge.to, ports[index][1], horizontal, stride)
+        y := ifx source < target then source + 1 else target + 1
+        while y < ifx source < target then target else source {
+            CanvasSet(canvas, first_lane + 2 * index, y, ifx edge.dashed then cast(u32)0x2506 else cast(u32)0x2502, Role.EDGE)
+            y += 1
+        }
+        index += 1
+    }
+    index = 0
+    while index < graph.edge_count {
+        edge := *graph.edges[index]
+        source := OffsetPort(starts[:], labels[:], edge.from, ports[index][0], horizontal, stride)
+        target := OffsetPort(starts[:], labels[:], edge.to, ports[index][1], horizontal, stride)
+        lane := first_lane + 2 * index
+        endpoint_at: s32 = 0
+        while endpoint_at < 2 {
+            y := source
+            if endpoint_at == 1 { y = target }
+            x := box_cross
+            while x < lane {
+                symbol := cast(u32)0x2500
+                if CanvasPoint(canvas, x, y) == 0x2502 || CanvasPoint(canvas, x, y) == 0x2506 { symbol = cast(u32)0x256a }
+                else if edge.dashed { symbol = cast(u32)0x2504 }
+                CanvasSet(canvas, x, y, symbol, Role.EDGE)
+                x += 1
+            }
+            endpoint_at += 1
+        }
+        CanvasSet(canvas, box_cross - 1, source, cast(u32)0x251c, Role.NODE)
+        CanvasSet(canvas, box_cross - 1, target, cast(u32)0x251c, Role.NODE)
+        CanvasSet(canvas, box_cross, source, edge.source_tip, Role.EDGE)
+        CanvasSet(canvas, box_cross, target, edge.target_tip, Role.EDGE)
+        CanvasSet(canvas, lane, source, ifx source < target then cast(u32)0x2510 else cast(u32)0x2518, Role.EDGE)
+        CanvasSet(canvas, lane, target, ifx source < target then cast(u32)0x2518 else cast(u32)0x2510, Role.EDGE)
+        if horizontal {
+            PutText(canvas, source + 1, box_cross + 1, *edge.label)
+            PutText(canvas, target + 1, box_cross + 1, *edge.target_label)
+        } else {
+            PutText(canvas, box_cross + 2, source, *edge.label)
+            PutText(canvas, box_cross + 2, target, *edge.target_label)
+        }
+        index += 1
+    }
+    return .NONE
+}
+
+// Line views borrow the graph for the layout call; no label clone is needed.
+BuildNodeLines :: (node: *Node, output: *NodeLines) {
+    output.count = 0
+    output.decision = node.shape == .DECISION
+    text := LabelView(node.label.bytes[:], node.label.overflow[:], node.label.length)
+    at: s32 = 0; start: s32 = 0
+    while at <= text.count {
+        if at == text.count || text[at] == cast(u8)#char "\n" {
+            VecPush(output.values, text[start:at])
+            output.count += 1; start = at + 1
+        }
+        at += 1
+    }
+    if node.member_count > 0 {
+        width := LabelWidth(*node.label)
+        // Labels contain at most forty terminal columns.
+        separator := "────────────────────────────────────────"
+        VecPush(output.values, separator[0:width * 3]); output.count += 1
+        member: s32 = 0
+        while member < node.member_count {
+            label := *node.members[member]
+            VecPush(output.values, LabelView(label.bytes[:], label.overflow[:], label.length))
+            output.count += 1; member += 1
+        }
+    }
+}
+
+LabelWidth :: (label: *Label) -> s32 {
+    return TextWidth(LabelView(label.bytes[:], label.overflow[:], label.length))
+}
+
+TextWidth :: (text: string) -> s32 {
+    total: s32 = 0; at: s32 = 0
+    while at < text.count {
+        byte := text[at]
+        if byte >= 32 && byte < 127 { total += 1; at += 1; continue }
+        decoded := Utf8.Decode(text, at)
+        width := PointWidth(decoded.value)
+        if width < 0 { return -1 }
+        total += width; at = decoded.after
+    }
+    return total
+}
+
+OffsetPort :: (starts: []s32, labels: []NodeLines, node: s32, port: s32, horizontal: bool, stride: s64) -> s32 {
+    if horizontal { return cast(s32)(starts[node] + 1 + port * stride) }
+    return starts[node] + labels[node].count + 1 + port
+}
+
+CanvasFill :: (canvas: *Canvas, point: u32, role: u8) {
+    count := canvas.width * canvas.height
+    VecResize(canvas.points, cast(s64)count)
+    VecResize(canvas.roles, cast(s64)count)
+    index: s32 = 0
+    while index < count { canvas.points[index] = point; canvas.roles[index] = role; index += 1 }
+}
+
+CanvasSet :: (canvas: *Canvas, across: s64, along: s64, point: u32, role: Role) {
+    stored := point
+    if canvas.horizontal { stored = Transpose(point) }
+    index := along * canvas.width + across
+    if canvas.horizontal { index = across * canvas.width + along }
+    canvas.points[index] = stored; canvas.roles[index] = cast(u8)role
+}
+
+CanvasPoint :: (canvas: *Canvas, across: s32, along: s32) -> u32 {
+    index := along * canvas.width + across
+    if canvas.horizontal { index = across * canvas.width + along }
+    point := canvas.points[index]
+    if canvas.horizontal { return Transpose(point) }
+    return point
+}
+
+PutText :: (canvas: *Canvas, x: s64, y: s64, value: *Label) -> Error {
+    return PutString(canvas, x, y, LabelView(value.bytes[:], value.overflow[:], value.length))
+}
+
+PutString :: (canvas: *Canvas, x: s64, y: s64, text: string) -> Error {
+    at: s32 = 0; column := x
+    while at < text.count {
+        point: u32 = cast(u32)text[at]
+        width: s32 = 1
+        if point < 128 { at += 1 }
+        else {
+            decoded := Utf8.Decode(text, at)
+            point = decoded.value; at = decoded.after
+            width = PointWidth(point)
+        }
+        if width <= 0 { return .UNSUPPORTED }
+        index := y * canvas.width + column
+        canvas.points[index] = point; canvas.roles[index] = cast(u8)Role.TEXT
+        fill := 1
+        while fill < width {
+            canvas.points[index + fill] = cast(u32)0
+            canvas.roles[index + fill] = cast(u8)Role.TEXT
+            fill += 1
+        }
+        column += width
+    }
+    return .NONE
+}
+
+Transpose :: (point: u32) -> u32 {
+    if point == cast(u32)0x2500 { return cast(u32)0x2502 }
+    if point == cast(u32)0x2502 { return cast(u32)0x2500 }
+    if point == cast(u32)0x2504 { return cast(u32)0x2506 }
+    if point == cast(u32)0x2506 { return cast(u32)0x2504 }
+    if point == cast(u32)0x2510 { return cast(u32)0x2514 }
+    if point == cast(u32)0x2514 { return cast(u32)0x2510 }
+    if point == cast(u32)0x256e { return cast(u32)0x2570 }
+    if point == cast(u32)0x2570 { return cast(u32)0x256e }
+    if point == cast(u32)0x251c { return cast(u32)0x252c }
+    if point == cast(u32)0x252c { return cast(u32)0x251c }
+    if point == cast(u32)0x25c4 { return cast(u32)0x25b2 }
+    if point == cast(u32)0x25b2 { return cast(u32)0x25c4 }
+    if point == cast(u32)0x25c1 { return cast(u32)0x25b3 }
+    if point == cast(u32)0x25b3 { return cast(u32)0x25c1 }
+    return point
+}

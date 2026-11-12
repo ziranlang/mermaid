@@ -1,0 +1,71 @@
+#scope_module
+// Bounded diagram model. Common labels stay inline; source-sized multiline
+// labels use owned overflow storage without inflating every node and event.
+
+MAX_SOURCE :: 16 * 1024
+MAX_NODES :: 16
+MAX_EDGES :: 24
+MAX_LABEL :: 40
+MAX_CELLS :: 64 * 1024
+MAX_STATEMENTS :: 512
+MAX_CANVAS :: 64 * 1024
+LABEL_BYTES :: 48
+
+Shape :: enum {
+    RECTANGLE
+    DECISION
+    STADIUM
+}
+
+Direction :: enum {
+    DOWN
+    UP
+    RIGHT
+    LEFT
+}
+
+Label :: struct {
+    bytes: [LABEL_BYTES]u8
+    overflow: Vec(u8)
+    length: s32
+}
+
+Node :: struct {
+    id: Label
+    label: Label
+    shape: Shape
+    declared: bool
+    members: Vec(Label)
+    member_count: s32
+}
+
+Edge :: struct {
+    from: s32
+    to: s32
+    label: Label
+    target_label: Label
+    source_tip: u32
+    target_tip: u32
+    dashed: bool
+}
+
+Graph :: struct {
+    direction: Direction
+    nodes: [MAX_NODES]Node
+    node_count: s32
+    edges: [MAX_EDGES]Edge
+    edge_count: s32
+}
+
+Statement :: struct {
+    text: string
+}
+
+Canvas :: struct {
+    points: Vec(u32)
+    roles: Vec(u8)
+    width: s32
+    height: s32
+    horizontal: bool
+}
+

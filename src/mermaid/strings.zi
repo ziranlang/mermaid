@@ -1,0 +1,180 @@
+#scope_module
+
+// Slices carry the caller's storage lifetime across the returned text view.
+LabelView :: (inline: []u8, overflow: []u8, length: s32) -> string {
+    if length > LABEL_BYTES { return TextView(overflow[0:length]) }
+    return TextView(inline[0:length])
+}
+
+LabelByte :: (label: *Label, at: s32) -> u8 {
+    if label.length > LABEL_BYTES { return label.overflow[at] }
+    return label.bytes[at]
+}
+
+LabelPut :: (label: *Label, at: s32, byte: u8) {
+    if label.length > LABEL_BYTES { label.overflow[at] = byte }
+    else { label.bytes[at] = byte }
+}
+
+LabelSize :: (label: *Label, length: s32) -> bool {
+    if length > MAX_SOURCE { return false }
+    if length > LABEL_BYTES && !VecResize(label.overflow, cast(s64)length) { return false }
+    label.length = length
+    return true
+}
+
+LabelEqualText :: (value: *Label, expected: string) -> bool {
+    return LabelView(value.bytes[:], value.overflow[:], value.length) == expected
+}
+
+LabelEqual :: (left: *Label, right: *Label) -> bool {
+    return LabelView(left.bytes[:], left.overflow[:], left.length) == LabelView(right.bytes[:], right.overflow[:], right.length)
+}
+
+LabelSet :: (output: *Label, value: string) -> bool {
+    if value.count > MAX_SOURCE || !LabelSize(output, cast(s32)value.count) { return false }
+    index: s32 = 0
+    while index < value.count { LabelPut(output, index, value[index]); index += 1 }
+    return true
+}
+
+LabelSetLabel :: (output: *Label, value: *Label) -> bool {
+    if output == value { return true }
+    if !LabelSize(output, value.length) { return false }
+    index: s32 = 0
+    while index < value.length { LabelPut(output, index, LabelByte(value, index)); index += 1 }
+    return true
+}
+
+LabelAppendLabel :: (output: *Label, left: *Label, right: string) -> bool {
+    if output == left { return LabelAppendSelf(output, right) }
+    length := cast(s64)left.length + right.count
+    if length > MAX_SOURCE || !LabelSize(output, cast(s32)length) { return false }
+    index: s32 = 0
+    while index < left.length { LabelPut(output, index, LabelByte(left, index)); index += 1 }
+    index = 0
+    while index < right.count { LabelPut(output, left.length + index, right[index]); index += 1 }
+    return true
+}
+
+LabelAppendPrefix :: (output: *Label, prefix: string, value: *Label) -> bool {
+    length := prefix.count + cast(s64)value.length
+    if length > MAX_SOURCE || !LabelSize(output, cast(s32)length) { return false }
+    index: s32 = 0
+    while index < prefix.count { LabelPut(output, index, prefix[index]); index += 1 }
+    index = 0
+    while index < value.length { LabelPut(output, cast(s32)prefix.count + index, LabelByte(value, index)); index += 1 }
+    return true
+}
+
+LabelAppendSelf :: (output: *Label, suffix: string) -> bool {
+    old := output.length
+    length := cast(s64)old + suffix.count
+    if length > MAX_SOURCE { return false }
+    if length > LABEL_BYTES {
+        if !VecResize(output.overflow, length) { return false }
+        if old <= LABEL_BYTES {
+            index: s32 = 0
+            while index < old { output.overflow[index] = output.bytes[index]; index += 1 }
+        }
+    }
+    output.length = cast(s32)length
+    index: s32 = 0
+    while index < suffix.count { LabelPut(output, old + index, suffix[index]); index += 1 }
+    return true
+}
+
+LabelAppend :: (output: *Label, left: string, right: string) -> bool {
+    length := left.count + right.count
+    if length > MAX_SOURCE || !LabelSize(output, cast(s32)length) { return false }
+    index: s32 = 0
+    while index < left.count { LabelPut(output, index, left[index]); index += 1 }
+    offset := cast(s32)left.count
+    index = 0
+    while index < right.count { LabelPut(output, offset + index, right[index]); index += 1 }
+    return true
+}
+
+StartsWith :: (value: string, prefix: string) -> bool {
+    if prefix.count > value.count { return false }
+    index: s64 = 0
+    while index < prefix.count {
+        if value[index] != prefix[index] { return false }
+        index += 1
+    }
+    return true
+}
+
+EndsWith :: (value: string, suffix: string) -> bool {
+    if suffix.count > value.count { return false }
+    start := value.count - suffix.count
+    index: s64 = 0
+    while index < suffix.count {
+        if value[start + index] != suffix[index] { return false }
+        index += 1
+    }
+    return true
+}
+
+IndexByte :: (value: string, wanted: u8) -> s64 {
+    index: s64 = 0
+    while index < value.count {
+        if value[index] == wanted { return index }
+        index += 1
+    }
+    return -1
+}
+
+ContainsByte :: (value: string, wanted: u8) -> bool {
+    return IndexByte(value, wanted) >= 0
+}
+
+IsIdentifierByte :: (byte: u8) -> bool {
+    return (byte >= cast(u8)#char "a" && byte <= cast(u8)#char "z") ||
+           (byte >= cast(u8)#char "A" && byte <= cast(u8)#char "Z") ||
+           (byte >= cast(u8)#char "0" && byte <= cast(u8)#char "9") || byte == cast(u8)#char "_"
+}
+
+IsControl :: (point: u32) -> bool {
+    return point < 32 || point == 127 || (point >= 128 && point <= 159)
+}
+
+SpaceAt :: (value: string, at: s64) -> bool {
+    byte := value[at]
+    if byte < 128 { return byte == 32 || (byte >= 9 && byte <= 13) }
+    decoded := Utf8.Decode(value, cast(s32)at)
+    return Whitespace.IsWhiteSpace(decoded.value)
+}
+
+Trim :: (value: string) -> string {
+    start: s64 = 0
+    while start < value.count && SpaceAt(value, start) { if value[start] < 128 { start += 1 } else { start = Utf8.Decode(value, cast(s32)start).after } }
+    end := value.count
+    while end > start {
+        previous := end - 1
+        while previous > start && (value[previous] & cast(u8)192) == cast(u8)128 { previous -= 1 }
+        if !SpaceAt(value, previous) { break }
+        end = previous
+    }
+    return value[start:end]
+}
+
+TrimStart :: (value: string) -> string {
+    start: s64 = 0
+    while start < value.count && SpaceAt(value, start) { if value[start] < 128 { start += 1 } else { start = Utf8.Decode(value, cast(s32)start).after } }
+    return value[start:value.count]
+}
+
+SplitWhitespaceFirst :: (value: string) -> string {
+    trimmed := Trim(value)
+    index: s64 = 0
+    while index < trimmed.count {
+        if SpaceAt(trimmed, index) { return trimmed[0:index] }
+        if trimmed[index] < 128 { index += 1 } else { index = Utf8.Decode(trimmed, cast(s32)index).after }
+    }
+    return trimmed
+}
+
+Slice :: (value: string, start: s64, end: s64) -> string {
+    return value[start:end]
+}

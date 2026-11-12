@@ -1,0 +1,40 @@
+Mermaid :: #import "mermaid/mermaid"
+
+main :: () -> s32 {
+    examples := string.[
+        "graph TD; A --> B",
+        "graph LR; A([请求<br>Ready]) -->|go| B{Done?}",
+        "sequenceDiagram; actor U as Buyer; U->>A: Request; opt ready; A-->>U: Done; end",
+        "stateDiagram-v2; [*] --> A; A --> [*]",
+        "classDiagram\nclass A {\n+name\n}\nA --> B : uses",
+        "erDiagram; A ||--o{ B : has",
+    ]
+    for source: examples {
+        result := Mermaid.Render(source, 200)
+        if result.status != .NONE || result.text.bytes.count == 0 { return 1 }
+        grid := Mermaid.RenderGrid(source, 200)
+        if grid.status != .NONE || grid.points.count != cast(s64)grid.width * cast(s64)grid.height ||
+           grid.roles.count != grid.points.count { return 6 }
+        narrower := Mermaid.Render(source, 0)
+        if narrower.status != .TOO_WIDE { return 2 }
+    }
+    invalid := string.["", "mindmap", "graph; A[<b>]", "sequenceDiagram; A->>B: <br>", "graph; A[👍🏽]", "graph; A[x]; A[y]"]
+    for source: invalid {
+        result := Mermaid.Render(source, 200)
+        if result.status != .UNSUPPORTED { return 3 }
+    }
+    for i: 0..9 {
+        result := Mermaid.Render("graph; A", 200)
+        if TextView(result.text) != "┌───┐\n│ A │\n└───┘" { return 4 }
+    }
+    // Cross the inline-storage boundary, then replace a normalized long label.
+    source: Vec(u8)
+    BuilderAppend(source, "graph TD; A[\"")
+    for i: 0..499 { BuilderAppend(source, "x<br>") }
+    BuilderAppend(source, "\"]; A[\"")
+    for i: 0..499 { BuilderAppend(source, "x<br>") }
+    BuilderAppend(source, "\"]")
+    long := Mermaid.Render(TextView(source[:]), 100)
+    if long.status != .NONE || long.text.bytes.count < 4000 { return 5 }
+    return 0
+}

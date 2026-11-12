@@ -1,0 +1,42 @@
+#scope_module
+#load "width_tables.zi";
+
+PointWidth :: (point: u32) -> s32 {
+    if point < 32 || (point >= 127 && point < 160) { return -1 }
+    if point < 127 { return 1 }
+    if ZeroHas(point) { return 0 }
+    if WideHas(point) { return 2 }
+    if point == 0x17d8 { return 3 }
+    return 1
+}
+
+// Every zero-width scalar is already rejected. These are the remaining
+// unicode-width interactions between positive-width scalars.
+HasWidthLigature :: (label: string) -> bool {
+    previous: u32 = 0; before_previous: u32 = 0
+    at: s32 = 0
+    while at < label.count {
+        decoded := Utf8.Decode(label, at)
+        point := decoded.value
+        if point >= 0x1f3fb && point <= 0x1f3ff && EmojiBaseHas(previous) { return true }
+        if LamHas(previous) && AlefHas(point) { return true }
+        if previous >= 0xa4f8 && previous <= 0xa4fb && point >= 0xa4fc && point <= 0xa4fd { return true }
+        if previous == 0x2d7f && TifinaghHas(before_previous) && TifinaghHas(point) { return true }
+        before_previous = previous; previous = point; at = decoded.after
+    }
+    end := cast(s32)label.count
+    state: s32 = 0
+    while end > 0 {
+        start := end - 1
+        while start > 0 && (label[start] & cast(u8)192) == cast(u8)128 { start -= 1 }
+        point := Utf8.Decode(label, start).value
+        if state == 1 {
+            if point == 0x16d63 || point == 0x16d67 || point == 0x16d69 { return true }
+            if point == 0x16d68 { end = start; continue }
+        } else if state == 2 && point == 0x16d63 { return true }
+        state = 0
+        if point == 0x16d67 { state = 1 } else if point == 0x16d68 { state = 2 }
+        end = start
+    }
+    return false
+}

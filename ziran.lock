@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "packages": [
+
+  ],
+  "root": {
+    "dependencies": {},
+    "name": "mermaid"
+  },
+  "toolchain": {
+    "commit": "71c0eec79ddb3514b6b8a3363b579967801e64b8",
+    "ref": "master",
+    "url": "https://github.com/ziranlang/ziran.git"
+  }
+}

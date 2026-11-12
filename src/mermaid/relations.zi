@@ -1,0 +1,218 @@
+#scope_module
+// Class and ER grammars, including members, cardinalities and relationship tips.
+
+
+ParseRelations :: (header: string, source: string, statements: []Statement, count: s32, graph: *Graph) -> Error {
+    if header == "stateDiagram" || header == "stateDiagram-v2" {
+        return ParseState(source, statements, count, graph)
+    }
+    er := header == "erDiagram"
+    block := -1
+    direction := false
+    statement_at: s32 = 0
+    while statement_at < count {
+        line := statements[statement_at].text
+        statement_at += 1
+        if block >= 0 {
+            if (line == "}") { block = -1 }
+            else {
+                member: Label
+                if er {
+                    status := Attribute(line, *member)
+                    if status != .NONE { return status }
+                } else {
+                    if ContainsByte(line, cast(u8)#char "{") || ContainsByte(line, cast(u8)#char "}") { return .UNSUPPORTED }
+                    status := CheckLabel(line)
+                    if status != .NONE { return status }
+                    if !LabelSet(*member, line) { return .UNSUPPORTED }
+                }
+                if graph.nodes[block].member_count == 16 { return .LIMIT }
+                VecPush(graph.nodes[block].members, member)
+                graph.nodes[block].member_count += 1
+            }
+            continue
+        }
+        if StartsWith(line, "direction ") {
+            if direction { return .UNSUPPORTED }
+            parsed := ParseDirection(Trim(line[10:line.count]))
+            if cast(s32)parsed < 0 { return .UNSUPPORTED }
+            graph.direction = parsed; direction = true; continue
+        }
+        declaration := !er && StartsWith(line, "class ")
+        rest := line
+        if declaration { rest = rest[6:rest.count] }
+        id := ParseIdentifier(rest); rest = id.rest
+
+        if id.at < 0 { return ErrorFromInt(id.at) }
+        rest = TrimStart(rest)
+        title := id.value == "accTitle" || er && CaseInsensitiveEqual(id.value, "accTitle")
+        description := id.value == "accDescr" || er && CaseInsensitiveEqual(id.value, "accDescr")
+        if !declaration && ((title && StartsWith(rest, ":")) || (description && (StartsWith(rest, ":") || StartsWith(rest, "{")))) { return .UNSUPPORTED }
+        from := GraphNode(graph, id.value)
+        if from < 0 { return ErrorFromInt(from) }
+        if (rest == "{") && (er || declaration) { block = from; continue }
+        if declaration || er && rest.count == 0 {
+            if rest.count != 0 { return .UNSUPPORTED }
+            continue
+        }
+        if !er && StartsWith(rest, ":") && !StartsWith(rest, "::") {
+            member := Trim(rest[1:rest.count])
+            status := CheckLabel(member)
+            if status != .NONE { return status }
+            if graph.nodes[from].member_count == 16 { return .LIMIT }
+            VecResize(graph.nodes[from].members, cast(s64)graph.nodes[from].member_count + 1)
+            if !LabelSet(*graph.nodes[from].members[graph.nodes[from].member_count], member) { return .UNSUPPORTED }
+            graph.nodes[from].member_count += 1
+            continue
+        }
+        source_card: Label
+        if !er {
+            cardinality := Cardinality(rest, *source_card); rest = cardinality.rest
+            if cardinality.at < 0 { return ErrorFromInt(cardinality.at) }
+        }
+        rest = TrimStart(rest)
+        split_dash := IndexSubsequence(rest, "--")
+        split_dot := IndexSubsequence(rest, "..")
+        split := split_dash
+        if split < 0 || split_dot >= 0 && split_dot < split { split = split_dot }
+        if split < 0 { return .UNSUPPORTED }
+        if split > 2 { return .UNSUPPORTED }
+        left := rest[0:split]
+        dashed := rest[split:split + 2] == ".."
+        rest = rest[split + 2:rest.count]
+        source_tip := cast(u32)0x2500; target_tip := cast(u32)0x2500
+        target_card: Label
+        if er {
+            if left == "||" { LabelSet(*source_card, "1") }
+            else if left == "|o" { LabelSet(*source_card, "0..1") }
+            else if left == "}|" { LabelSet(*source_card, "1..many") }
+            else if left == "}o" { LabelSet(*source_card, "0..many") }
+            else { return .UNSUPPORTED }
+            if rest.count < 2 { return .UNSUPPORTED }
+            right := rest[0:2]
+            if right == "||" { LabelSet(*target_card, "1") }
+            else if right == "o|" { LabelSet(*target_card, "0..1") }
+            else if right == "|{" { LabelSet(*target_card, "1..many") }
+            else if right == "o{" { LabelSet(*target_card, "0..many") }
+            else { return .UNSUPPORTED }
+            rest = rest[2:rest.count]
+        } else {
+            if left.count == 0 { source_tip = 0x2500 }
+            else if left == "<" { source_tip = cast(u32)0x25c4 }
+            else if left == "<|" { source_tip = cast(u32)0x25c1 }
+            else if left == "*" { source_tip = cast(u32)0x25c6 }
+            else if left == "o" { source_tip = cast(u32)0x25c7 }
+            else { return .UNSUPPORTED }
+            target_tip = 0x2500
+            if StartsWith(rest, "|>") { target_tip = cast(u32)0x25c1; rest = rest[2:rest.count] }
+            else if StartsWith(rest, ">") { target_tip = cast(u32)0x25c4; rest = rest[1:rest.count] }
+            else if StartsWith(rest, "*") { target_tip = cast(u32)0x25c6; rest = rest[1:rest.count] }
+            else if StartsWith(rest, "o") {
+                if !(rest.count > 1 && IsIdentifierByte(rest[1])) { target_tip = cast(u32)0x25c7; rest = rest[1:rest.count] }
+            }
+            cardinality := Cardinality(rest, *target_card); rest = cardinality.rest
+            if cardinality.at < 0 { return ErrorFromInt(cardinality.at) }
+        }
+        to_id := ParseIdentifier(rest); rest = to_id.rest
+
+        if to_id.at < 0 { return ErrorFromInt(to_id.at) }
+        to := GraphNode(graph, to_id.value)
+        if to < 0 { return ErrorFromInt(to) }
+        rest = Trim(rest)
+        label: Label
+        if StartsWith(rest, ":") && !StartsWith(rest, "::") {
+            text := Trim(rest[1:rest.count])
+            if er && ContainsByte(text, cast(u8)#char "\"") { return .UNSUPPORTED }
+            status := CheckLabel(text)
+            if status != .NONE { return status }
+            if !LabelSet(*label, text) { return .UNSUPPORTED }
+        } else if rest.count != 0 || er { return .UNSUPPORTED }
+        if graph.edge_count == MAX_EDGES { return .LIMIT }
+        edge := *graph.edges[graph.edge_count]
+        edge.from = from; edge.to = to; LabelSetLabel(*edge.label, *label)
+        edge.source_tip = source_tip; edge.target_tip = target_tip; edge.dashed = dashed
+        if source_card.length > 0 {
+            if label.length == 0 {
+                LabelAppendPrefix(*edge.label, "(", *source_card)
+                LabelAppendSelf(*edge.label, ")")
+            }
+            else {
+                combined: Label
+                LabelAppendPrefix(*combined, "(", *source_card)
+                LabelAppendSelf(*combined, ") ")
+                LabelAppendLabel(*edge.label, *combined, LabelView(label.bytes[:], label.overflow[:], label.length))
+            }
+        }
+        if target_card.length > 0 {
+            LabelAppendPrefix(*edge.target_label, "(", *target_card)
+            LabelAppendSelf(*edge.target_label, ")")
+        }
+        graph.edge_count += 1
+    }
+    if block >= 0 || graph.node_count == 0 { return .UNSUPPORTED }
+    return .NONE
+}
+
+CaseInsensitiveEqual :: (value: string, expected: string) -> bool {
+    if value.count != expected.count { return false }
+    index: s64 = 0
+    while index < value.count {
+        left := value[index]; right := expected[index]
+        if left >= cast(u8)#char "A" && left <= cast(u8)#char "Z" { left += 32 }
+        if right >= cast(u8)#char "A" && right <= cast(u8)#char "Z" { right += 32 }
+        if left != right { return false }
+        index += 1
+    }
+    return true
+}
+
+Cardinality :: (source: string, output: *Label) -> Cursor {
+    rest := TrimStart(source)
+    if StartsWith(rest, "\"") {
+        closing := IndexByte(rest[1:rest.count], cast(u8)#char "\"")
+        if closing < 0 { return .{at = ErrorInt(.UNSUPPORTED)} }
+        value := rest[1:1 + closing]
+        status := CheckLabel(value)
+        if status != .NONE { return .{at = ErrorInt(status)} }
+        if !LabelSet(output, value) { return .{at = ErrorInt(.LIMIT)} }
+        rest = rest[2 + closing:rest.count]
+    } else { output.length = 0 }
+    return .{rest = rest}
+}
+
+Attribute :: (line: string, output: *Label) -> Error {
+    rest := line
+    data_type := ParseIdentifier(rest); rest = data_type.rest
+
+    if data_type.at < 0 || rest.count == 0 || rest[0] > cast(u8)#char " " { return .UNSUPPORTED }
+    name := ParseIdentifier(rest); rest = name.rest
+
+    if name.at < 0 { return ErrorFromInt(name.at) }
+    keys: string = Trim(rest)
+    comment: string = ""
+    quote := IndexByte(keys, cast(u8)#char "\"")
+    if quote >= 0 {
+        if quote == keys.count - 1 || !EndsWith(keys, "\"") || ContainsByte(keys[quote + 1:keys.count - 1], cast(u8)#char "\"") { return .UNSUPPORTED }
+        comment = keys[quote + 1:keys.count - 1]
+        status := CheckLabel(comment)
+        if status != .NONE { return status }
+        keys = Trim(keys[0:quote])
+    }
+    if keys.count > 0 {
+        start: s64 = 0; index: s64 = 0
+        while index <= keys.count {
+            key := "PK"
+            if index == keys.count || keys[index] == cast(u8)#char "," {
+                key = Trim(keys[start:index])
+                if !((key == "PK") || (key == "FK") || (key == "UK")) { return .UNSUPPORTED }
+                start = index + 1
+            }
+            index += 1
+        }
+    }
+    LabelAppend(output, data_type.value, " ")
+    LabelAppendSelf(output, name.value)
+    if keys.count > 0 { LabelAppendSelf(output, " "); LabelAppendSelf(output, keys) }
+    if comment.count > 0 { LabelAppendSelf(output, " — "); LabelAppendSelf(output, comment) }
+    return CheckLabelLabel(output)
+}

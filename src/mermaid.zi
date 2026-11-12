@@ -1,0 +1,174 @@
+using Storage :: #import "std/vec";
+Role :: enum {
+    EDGE
+    NODE
+    TEXT
+}
+
+Error :: enum {
+    NONE
+    UNSUPPORTED
+    LIMIT
+    TOO_WIDE
+}
+
+RenderedText :: struct {
+    text: Storage.Text
+    status: Error
+}
+
+// Owned row-major Unicode cells for native consumers that construct their own
+// text or semantic spans. Zero scalars continue a preceding wide character.
+RenderedGrid :: struct {
+    points: Vec(u32)
+    roles: Vec(u8)
+    width: s32
+    height: s32
+    status: Error
+}
+
+#scope_module
+using Utf8 :: #import "std/utf8";
+Whitespace :: #import "std/unicode";
+#load "mermaid/types.zi";
+#load "mermaid/width.zi";
+#load "mermaid/strings.zi";
+#load "mermaid/syntax.zi";
+#load "mermaid/parse.zi";
+#load "mermaid/relations.zi";
+#load "mermaid/state.zi";
+#load "mermaid/render.zi";
+#load "mermaid/sequence.zi";
+
+
+// Two passes allocate exactly once and write whole semantic runs.
+ScalarBytes :: (point: u32) -> s64 {
+    if point < 128 { return 1 }
+    if point < 2048 { return 2 }
+    if point < 65536 { return 3 }
+    return 4
+}
+
+RowEnd :: (canvas: *Canvas, y: s32) -> s32 {
+    end := canvas.width
+    while end > 0 {
+        point := canvas.points[y * canvas.width + end - 1]
+        if point != 0 && (point == 32 || (point > 127 && Whitespace.IsWhiteSpace(point))) { end -= 1 }
+        else if point == 0 { end -= 1 }
+        else { break }
+    }
+    return end
+}
+
+Serialize :: (canvas: *Canvas, output: *Vec(u8), semantic: bool) -> Error {
+    size: s64 = 0
+    for y: 0..canvas.height - 1 {
+        end := RowEnd(canvas, cast(s32)y)
+        previous: s32 = -1
+        for x: 0..end - 1 {
+            at := y * canvas.width + x
+            point := canvas.points[at]
+            if point == 0 { continue }
+            role := cast(s32)canvas.roles[at]
+            if semantic && role != previous { size += 5; previous = role }
+            size += ScalarBytes(point)
+        }
+        if semantic { size += 5 } else if y + 1 < canvas.height { size += 1 }
+    }
+    if !VecResize(<<output, size) { return .LIMIT }
+    index: s64 = 0
+    for y: 0..canvas.height - 1 {
+        end := RowEnd(canvas, cast(s32)y)
+        previous: s32 = -1
+        header: s64 = -1
+        for x: 0..end - 1 {
+            at := y * canvas.width + x
+            point := canvas.points[at]
+            if point == 0 { continue }
+            role := cast(s32)canvas.roles[at]
+            if semantic && role != previous {
+                if header >= 0 { WriteLength(output, header, index - header - 5) }
+                header = index; output.*[index] = cast(u8)role; index += 5; previous = role
+            }
+            if point < 128 { output.*[index] = cast(u8)point; index += 1 }
+            else if point < 2048 {
+                output.*[index] = cast(u8)(192 | point >> 6); output.*[index + 1] = cast(u8)(128 | point & 63); index += 2
+            } else if point < 65536 {
+                output.*[index] = cast(u8)(224 | point >> 12); output.*[index + 1] = cast(u8)(128 | point >> 6 & 63)
+                output.*[index + 2] = cast(u8)(128 | point & 63); index += 3
+            } else {
+                output.*[index] = cast(u8)(240 | point >> 18); output.*[index + 1] = cast(u8)(128 | point >> 12 & 63)
+                output.*[index + 2] = cast(u8)(128 | point >> 6 & 63); output.*[index + 3] = cast(u8)(128 | point & 63); index += 4
+            }
+        }
+        if semantic {
+            if header >= 0 { WriteLength(output, header, index - header - 5) }
+            output.*[index] = cast(u8)3; WriteLength(output, index, 0); index += 5
+        } else if y + 1 < canvas.height { output.*[index] = cast(u8)#char "\n"; index += 1 }
+    }
+    return .NONE
+}
+
+WriteLength :: (output: *Vec(u8), at: s64, length: s64) {
+    for i: 0..3 { output.*[at + 1 + i] = cast(u8)(length >> (i * 8) & 255) }
+}
+
+#scope_export
+Render :: (source: string, max_width: s64) -> RenderedText {
+    result: RenderedText
+    bytes: Vec(u8)
+    result.status = RenderTextBytes(source, max_width, *bytes)
+    if result.status == .NONE { result.text = BuilderFinish(bytes) }
+    return result
+}
+
+RenderBytes :: (source: string, max_width: s64, output: *Vec(u8)) -> Error {
+    return RenderTo(source, max_width, output, true)
+}
+
+RenderTextBytes :: (source: string, max_width: s64, output: *Vec(u8)) -> Error {
+    return RenderTo(source, max_width, output, false)
+}
+
+RenderGrid :: (source: string, max_width: s64) -> RenderedGrid {
+    canvas: Canvas
+    status := ParseCanvas(source, max_width, *canvas)
+    return .{points = canvas.points, roles = canvas.roles,
+             width = canvas.width, height = canvas.height, status = status}
+}
+
+#scope_module
+RenderTo :: (source: string, max_width: s64, output: *Vec(u8), semantic: bool) -> Error {
+    VecResize(<<output, 0)
+    canvas: Canvas
+    status := ParseCanvas(source, max_width, *canvas)
+    if status != .NONE { return status }
+    return Serialize(*canvas, output, semantic)
+}
+
+ParseCanvas :: (source: string, max_width: s64, canvas: *Canvas) -> Error {
+    if source.count > MAX_SOURCE || max_width < 0 { return .LIMIT }
+    if !Utf8.Valid(source) { return .UNSUPPORTED }
+    statements: Vec(Statement)
+    statement_count: s32 = 0
+    status := Statements(source, *statements, *statement_count)
+    if status != .NONE { return status }
+    if statement_count == 0 { return .UNSUPPORTED }
+    header := statements[0].text
+    body := statements[1:statement_count]
+    if header == "sequenceDiagram" {
+        status = RenderSequence(source, body, statement_count - 1, max_width, canvas)
+    } else {
+        graph: Graph
+        if header == "stateDiagram" || header == "stateDiagram-v2" ||
+           header == "classDiagram" || header == "erDiagram" {
+            status = ParseRelations(header, source, body, statement_count - 1, *graph)
+        } else {
+            status = ParseFlowchart(header, source, body, statement_count - 1, *graph)
+        }
+        if status == .NONE { status = RenderGraph(*graph, max_width, canvas) }
+    }
+    if status != .NONE { return status }
+    return .NONE
+}
+
