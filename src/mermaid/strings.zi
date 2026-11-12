@@ -95,40 +95,6 @@ LabelAppend :: (output: *Label, left: string, right: string) -> bool {
     return true
 }
 
-StartsWith :: (value: string, prefix: string) -> bool {
-    if prefix.count > value.count { return false }
-    index: s64 = 0
-    while index < prefix.count {
-        if value[index] != prefix[index] { return false }
-        index += 1
-    }
-    return true
-}
-
-EndsWith :: (value: string, suffix: string) -> bool {
-    if suffix.count > value.count { return false }
-    start := value.count - suffix.count
-    index: s64 = 0
-    while index < suffix.count {
-        if value[start + index] != suffix[index] { return false }
-        index += 1
-    }
-    return true
-}
-
-IndexByte :: (value: string, wanted: u8) -> s64 {
-    index: s64 = 0
-    while index < value.count {
-        if value[index] == wanted { return index }
-        index += 1
-    }
-    return -1
-}
-
-ContainsByte :: (value: string, wanted: u8) -> bool {
-    return IndexByte(value, wanted) >= 0
-}
-
 IsIdentifierByte :: (byte: u8) -> bool {
     return (byte >= cast(u8)#char "a" && byte <= cast(u8)#char "z") ||
            (byte >= cast(u8)#char "A" && byte <= cast(u8)#char "Z") ||
@@ -173,8 +139,4 @@ SplitWhitespaceFirst :: (value: string) -> string {
         if trimmed[index] < 128 { index += 1 } else { index = Utf8.Decode(trimmed, cast(s32)index).after }
     }
     return trimmed
-}
-
-Slice :: (value: string, start: s64, end: s64) -> string {
-    return value[start:end]
 }

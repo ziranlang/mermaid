@@ -45,13 +45,13 @@ The source is limited to 16 KiB, with at most 16 graph nodes, 24 graph edges,
 lines use owned overflow storage; ordinary labels stay inline. Supported
 families have additional grammar limits matching the original renderer.
 The implementation has no Xcoder dependency, foreign calls, or platform-specific
-standard module imports. Native adapters and Rust API benchmarks live in Xcoder.
+standard module imports. Xcoder's native Rust adapter consumes `RenderGrid`.
 
 Run `build-queue -- make test` for C, Go, and portable VM tests. Local toolchain
 overrides belong in the ignored `ziran.local.toml`; the committed lock pins the
-published toolchain. Xcoder retains the original Rust renderer as a test-only
-reference and compares public results, semantic spans, snapshots, limits,
-Unicode, long labels, and truncated inputs against it.
+published toolchain. Xcoder's adapter tests run the original Rust renderer's
+suite and snapshots against this package, plus digests of generated
+flowchart, Unicode, limit and long-label cases recorded from that renderer.
 
 The original renderer and its grammar originate in OpenAI Codex (Apache-2.0).
 Unicode width behavior follows the Rust reference's unicode-width 0.2.1.

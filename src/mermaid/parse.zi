@@ -21,7 +21,7 @@ ParseFlowchart :: (header: string, source: string, statements: []Statement, coun
     if (tokens == "flowchart") || (tokens == "graph") {
         if remainder.count > tokens.count {
             next := Trim(remainder[tokens.count:remainder.count])
-            if IndexByte(next, cast(u8)#char " ") >= 0 { return .UNSUPPORTED }
+            if TextFind(next, " ") >= 0 { return .UNSUPPORTED }
             parsed := ParseDirection(next)
             if !ValidDirection(next, parsed) { return .UNSUPPORTED }
             direction = parsed
@@ -41,29 +41,29 @@ ParseFlowchart :: (header: string, source: string, statements: []Statement, coun
             source_tip := cast(u32)0x2500
             target_tip := cast(u32)0x25c4
             dashed := false
-            if StartsWith(rest, "<-.->") {
+            if TextHasPrefix(rest, "<-.->") {
                 rest = rest[5:rest.count]; source_tip = 0x25c4; target_tip = 0x25c4; dashed = true
-            } else if StartsWith(rest, "<-->") {
+            } else if TextHasPrefix(rest, "<-->") {
                 rest = rest[4:rest.count]; source_tip = 0x25c4; target_tip = 0x25c4
-            } else if StartsWith(rest, "-.->") {
+            } else if TextHasPrefix(rest, "-.->") {
                 rest = rest[4:rest.count]; target_tip = 0x25c4; dashed = true
-            } else if StartsWith(rest, "-.-") {
+            } else if TextHasPrefix(rest, "-.-") {
                 rest = rest[3:rest.count]; target_tip = source_tip; dashed = true
-            } else if StartsWith(rest, "-->") {
+            } else if TextHasPrefix(rest, "-->") {
                 rest = rest[3:rest.count]
-            } else if StartsWith(rest, "---") {
+            } else if TextHasPrefix(rest, "---") {
                 rest = rest[3:rest.count]; target_tip = source_tip
             } else {
                 stem: string = "--"
-                if StartsWith(rest, "--") { rest = rest[2:rest.count]; dashed = false }
-                else if StartsWith(rest, "-.") { rest = rest[2:rest.count]; stem = ".-"; dashed = true }
+                if TextHasPrefix(rest, "--") { rest = rest[2:rest.count]; dashed = false }
+                else if TextHasPrefix(rest, "-.") { rest = rest[2:rest.count]; stem = ".-"; dashed = true }
                 else { return .UNSUPPORTED }
                 closing := IndexSubsequence(rest, stem)
                 if closing < 0 { return .UNSUPPORTED }
                 text := rest[0:closing]
                 if text.count == 0 || text[0] > cast(u8)#char " " || text[text.count - 1] > cast(u8)#char " " { return .UNSUPPORTED }
                 rest = rest[closing + 2:rest.count]
-                if !StartsWith(rest, ">") { return .UNSUPPORTED }
+                if !TextHasPrefix(rest, ">") { return .UNSUPPORTED }
                 rest = rest[1:rest.count]
                 converted := FlowchartLabel(Trim(text))
                 if converted.at < 0 { return .UNSUPPORTED }
@@ -71,9 +71,9 @@ ParseFlowchart :: (header: string, source: string, statements: []Statement, coun
                 status := CheckLabelLabel(*label)
                 if status != .NONE { return status }
             }
-            if target_tip == source_tip && (StartsWith(rest, "o") || StartsWith(rest, "x")) { return .UNSUPPORTED }
+            if target_tip == source_tip && (TextHasPrefix(rest, "o") || TextHasPrefix(rest, "x")) { return .UNSUPPORTED }
             rest = TrimStart(rest)
-            if StartsWith(rest, "|") {
+            if TextHasPrefix(rest, "|") {
                 parsed := DelimitedLabel(rest[1:rest.count], "|")
                 if parsed.at < 0 { return ErrorFromInt(parsed.at) }
                 converted := FlowchartLabel(parsed.value)
@@ -125,7 +125,7 @@ ParseNodes :: (source: string, graph: *Graph) -> Indices {
     result.values[0] = first.at; result.count = 1
     while true {
         rest := TrimStart(result.rest)
-        if !StartsWith(rest, "&") { break }
+        if !TextHasPrefix(rest, "&") { break }
         if result.count == MAX_EDGES { result.count = ErrorInt(.LIMIT); break }
         next := ParseNode(rest[1:rest.count], graph)
         result.rest = next.rest
@@ -145,13 +145,13 @@ ParseNode :: (source: string, graph: *Graph) -> Cursor {
                 id.value == "class" || id.value == "classDef" ||
                 id.value == "linkStyle" || id.value == "click"
     if reserved { return .{at = ErrorInt(.UNSUPPORTED) , rest = rest}}
-    if StartsWith(rest, "[(") || StartsWith(rest, "[[") || StartsWith(rest, "[/") ||
-       StartsWith(rest, "[\\") || StartsWith(rest, "{{") { return .{at = ErrorInt(.UNSUPPORTED) , rest = rest}}
+    if TextHasPrefix(rest, "[(") || TextHasPrefix(rest, "[[") || TextHasPrefix(rest, "[/") ||
+       TextHasPrefix(rest, "[\\") || TextHasPrefix(rest, "{{") { return .{at = ErrorInt(.UNSUPPORTED) , rest = rest}}
     open: string = ""; close: string = ""; shape := Shape.RECTANGLE
     declaration := false
-    if StartsWith(rest, "[") { open = "["; close = "]"; declaration = true }
-    else if StartsWith(rest, "{") { open = "{"; close = "}"; shape = .DECISION; declaration = true }
-    else if StartsWith(rest, "([") { open = "(["; close = "])"; shape = .STADIUM; declaration = true }
+    if TextHasPrefix(rest, "[") { open = "["; close = "]"; declaration = true }
+    else if TextHasPrefix(rest, "{") { open = "{"; close = "}"; shape = .DECISION; declaration = true }
+    else if TextHasPrefix(rest, "([") { open = "(["; close = "])"; shape = .STADIUM; declaration = true }
     index := GraphNode(graph, id.value)
     if index < 0 { return .{at = index , rest = rest}}
     if declaration {
@@ -181,14 +181,14 @@ FlowchartLabel :: (raw: string) -> Cursor {
     result: Cursor
     result.at = ErrorInt(.UNSUPPORTED)
     value := raw
-    if StartsWith(value, "\"`") { return result }
-    if StartsWith(value, "\"") {
-        if !EndsWith(value, "\"") || value.count < 2 { return result }
+    if TextHasPrefix(value, "\"`") { return result }
+    if TextHasPrefix(value, "\"") {
+        if !TextHasSuffix(value, "\"") || value.count < 2 { return result }
         value = value[1:value.count - 1]
-    } else if ContainsByte(value, cast(u8)#char "[") || ContainsByte(value, cast(u8)#char "]") ||
-              ContainsByte(value, cast(u8)#char "{") || ContainsByte(value, cast(u8)#char "}") ||
-              ContainsByte(value, cast(u8)#char "|") { return result }
-    if ContainsByte(value, cast(u8)#char "\"") { return result }
+    } else if TextContains(value, "[") || TextContains(value, "]") ||
+              TextContains(value, "{") || TextContains(value, "}") ||
+              TextContains(value, "|") { return result }
+    if TextContains(value, "\"") { return result }
     result.value = value; result.at = 0
     return result
 }
@@ -196,11 +196,11 @@ FlowchartLabel :: (raw: string) -> Cursor {
 DelimitedLabel :: (text: string, close: string) -> Cursor {
     result: Cursor
     result.at = ErrorInt(.UNSUPPORTED)
-    if StartsWith(text, "\"") {
-        closing := IndexByte(text[1:text.count], cast(u8)#char "\"")
+    if TextHasPrefix(text, "\"") {
+        closing := TextFind(text[1:text.count], "\"")
         if closing < 0 { return result }
         after := closing + 2
-        if after > text.count || !StartsWith(text[after:text.count], close) { return result }
+        if after > text.count || !TextHasPrefix(text[after:text.count], close) { return result }
         result.value = text[0:after]; result.rest = text[after + close.count:text.count]; result.at = 0
         return result
     }

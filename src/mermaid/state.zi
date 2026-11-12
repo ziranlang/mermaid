@@ -10,7 +10,7 @@ ParseState :: (source: string, statements: []Statement, count: s32, graph: *Grap
         if (line == "state") || (line == "direction") ||
            (line == "note") || (line == "end") ||
            (line == "hide") { return .UNSUPPORTED }
-        if StartsWith(line, "direction ") {
+        if TextHasPrefix(line, "direction ") {
             if direction { return .UNSUPPORTED }
             parsed := ParseDirection(Trim(line[10:line.count]))
             if cast(s32)parsed < 0 { return .UNSUPPORTED }
@@ -18,15 +18,15 @@ ParseState :: (source: string, statements: []Statement, count: s32, graph: *Grap
         }
         rest := line
         from: s32
-        if StartsWith(rest, "state \"") {
+        if TextHasPrefix(rest, "state \"") {
             after := rest[7:rest.count]
-            closing := IndexByte(after, cast(u8)#char "\"")
+            closing := TextFind(after, "\"")
             if closing < 0 { return .UNSUPPORTED }
             label := after[0:closing]
             status := CheckLabel(label)
             if status != .NONE { return status }
             rest = TrimStart(after[closing + 1:after.count])
-            if !StartsWith(rest, "as ") { return .UNSUPPORTED }
+            if !TextHasPrefix(rest, "as ") { return .UNSUPPORTED }
             rest = rest[3:rest.count]
             id := ParseIdentifier(rest); rest = id.rest
 
@@ -38,7 +38,7 @@ ParseState :: (source: string, statements: []Statement, count: s32, graph: *Grap
             if status != .NONE { return status }
             continue
         }
-        if StartsWith(rest, "[*]") {
+        if TextHasPrefix(rest, "[*]") {
             rest = rest[3:rest.count]
             from = GraphNode(graph, "[initial]")
             if from < 0 { return ErrorFromInt(from) }
@@ -47,22 +47,22 @@ ParseState :: (source: string, statements: []Statement, count: s32, graph: *Grap
             id := ParseIdentifier(rest); rest = id.rest
 
             if id.at < 0 { return ErrorFromInt(id.at) }
-            if (CaseInsensitiveEqual(id.value, "accTitle") || CaseInsensitiveEqual(id.value, "accDescr")) && StartsWith(TrimStart(rest), ":") { return .UNSUPPORTED }
+            if (CaseInsensitiveEqual(id.value, "accTitle") || CaseInsensitiveEqual(id.value, "accDescr")) && TextHasPrefix(TrimStart(rest), ":") { return .UNSUPPORTED }
             from = GraphNode(graph, id.value)
             if from < 0 { return ErrorFromInt(from) }
         }
         rest = Trim(rest)
         if rest.count == 0 && !LabelEqualText(*graph.nodes[from].id, "[initial]") { continue }
-        if StartsWith(rest, ":") && !StartsWith(rest, "::") {
+        if TextHasPrefix(rest, ":") && !TextHasPrefix(rest, "::") {
             if LabelEqualText(*graph.nodes[from].id, "[initial]") { return .UNSUPPORTED }
             status := AddDescription(*graph.nodes[from], Trim(rest[1:rest.count]))
             if status != .NONE { return status }
             continue
         }
-        if !StartsWith(rest, "-->") { return .UNSUPPORTED }
+        if !TextHasPrefix(rest, "-->") { return .UNSUPPORTED }
         rest = TrimStart(rest[3:rest.count])
         to: s32
-        if StartsWith(rest, "[*]") {
+        if TextHasPrefix(rest, "[*]") {
             rest = rest[3:rest.count]
             to = GraphNode(graph, "[final]")
             if to < 0 { return ErrorFromInt(to) }
@@ -76,7 +76,7 @@ ParseState :: (source: string, statements: []Statement, count: s32, graph: *Grap
         }
         label: Label
         trimmed := Trim(rest)
-        if StartsWith(trimmed, ":") && !StartsWith(trimmed, "::") {
+        if TextHasPrefix(trimmed, ":") && !TextHasPrefix(trimmed, "::") {
             text := Trim(trimmed[1:trimmed.count])
             status := CheckLabel(text)
             if status != .NONE { return status }

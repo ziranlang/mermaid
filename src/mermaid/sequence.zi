@@ -27,14 +27,14 @@ RenderSequence :: (source: string, statements: []Statement, count: s32, max_widt
         line := statements[statement_at].text
         statement_at += 1
         event: Event
-        if StartsWith(line, "participant ") || StartsWith(line, "actor ") {
-            actor := StartsWith(line, "actor ")
+        if TextHasPrefix(line, "participant ") || TextHasPrefix(line, "actor ") {
+            actor := TextHasPrefix(line, "actor ")
             rest := line[ifx actor then 6 else 12:line.count]
             id := ParseIdentifier(rest); rest = id.rest
 
             if id.at < 0 { return ErrorFromInt(id.at) }
             label: Label; trimmed := TrimStart(rest)
-            if StartsWith(trimmed, "as ") {
+            if TextHasPrefix(trimmed, "as ") {
                 status := CheckLabel(trimmed[3:trimmed.count])
                 if status != .NONE { return status }
                 if !LabelSet(*label, trimmed[3:trimmed.count]) { return .UNSUPPORTED }
@@ -53,14 +53,14 @@ RenderSequence :: (source: string, statements: []Statement, count: s32, max_widt
         if (line == "end") {
             if block_count == 0 { return .UNSUPPORTED }
             block_count -= 1; event.kind = .CLOSE
-        } else if StartsWith(line, "else ") {
+        } else if TextHasPrefix(line, "else ") {
             if block_count == 0 || !LabelEqualText(*blocks[block_count - 1].kind, "alt") || blocks[block_count - 1].branched { return .UNSUPPORTED }
             blocks[block_count - 1].branched = true
             status := CheckLabel(line[5:line.count])
             if status != .NONE { return status }
             if !LabelSet(*event.text, "else ") || !LabelAppend(*event.text, "else ", line[5:line.count]) { return .UNSUPPORTED }
             event.kind = .BRANCH
-        } else if StartsWith(line, "loop ") || StartsWith(line, "alt ") || StartsWith(line, "opt ") || StartsWith(line, "critical ") || StartsWith(line, "break ") {
+        } else if TextHasPrefix(line, "loop ") || TextHasPrefix(line, "alt ") || TextHasPrefix(line, "opt ") || TextHasPrefix(line, "critical ") || TextHasPrefix(line, "break ") {
             kind := SplitWhitespaceFirst(line)
             text := line[kind.count + 1:line.count]
             status := CheckLabel(text)
@@ -69,7 +69,7 @@ RenderSequence :: (source: string, statements: []Statement, count: s32, max_widt
             LabelSet(*blocks[block_count].kind, kind)
             blocks[block_count].branched = false; block_count += 1
             LabelSet(*event.text, line); event.kind = .OPEN
-        } else if StartsWith(line, "Note over ") || StartsWith(line, "note over ") {
+        } else if TextHasPrefix(line, "Note over ") || TextHasPrefix(line, "note over ") {
             rest := line[10:line.count]
             left_id := ParseIdentifier(rest); rest = left_id.rest
 
@@ -77,7 +77,7 @@ RenderSequence :: (source: string, statements: []Statement, count: s32, max_widt
             left := Participant(people[:], *people_count, left_id.value)
             if left < 0 { return ErrorFromInt(left) }
             right := left; trimmed := TrimStart(rest)
-            if StartsWith(trimmed, ",") {
+            if TextHasPrefix(trimmed, ",") {
                 rest = trimmed[1:trimmed.count]
                 right_id := ParseIdentifier(rest); rest = right_id.rest
 
@@ -86,7 +86,7 @@ RenderSequence :: (source: string, statements: []Statement, count: s32, max_widt
                 if right < 0 { return ErrorFromInt(right) }
             }
             text := TrimStart(rest)
-            if !StartsWith(text, ":") { return .UNSUPPORTED }
+            if !TextHasPrefix(text, ":") { return .UNSUPPORTED }
             value := Trim(text[1:text.count]); status := CheckLabel(value)
             if status != .NONE { return status }
             LabelSet(*event.text, value); event.kind = .NOTE
@@ -113,12 +113,12 @@ MessageEvent :: (line: string, event: *Event) -> Error {
     LabelSet(*event.from_id, id.value)
     rest = TrimStart(rest)
     token := -1; arrow := cast(u32)0; dashed := false
-    if StartsWith(rest, "-->>") { token = 0; arrow = cast(u32)0x25b6; dashed = true }
-    else if StartsWith(rest, "->>") { token = 1; arrow = cast(u32)0x25b6; dashed = false }
-    else if StartsWith(rest, "-->") { token = 2; arrow = cast(u32)0x2504; dashed = true }
-    else if StartsWith(rest, "->") { token = 3; arrow = cast(u32)0x2500; dashed = false }
-    else if StartsWith(rest, "--x") { token = 4; arrow = cast(u32)#char "x"; dashed = true }
-    else if StartsWith(rest, "-x") { token = 5; arrow = cast(u32)#char "x"; dashed = false }
+    if TextHasPrefix(rest, "-->>") { token = 0; arrow = cast(u32)0x25b6; dashed = true }
+    else if TextHasPrefix(rest, "->>") { token = 1; arrow = cast(u32)0x25b6; dashed = false }
+    else if TextHasPrefix(rest, "-->") { token = 2; arrow = cast(u32)0x2504; dashed = true }
+    else if TextHasPrefix(rest, "->") { token = 3; arrow = cast(u32)0x2500; dashed = false }
+    else if TextHasPrefix(rest, "--x") { token = 4; arrow = cast(u32)#char "x"; dashed = true }
+    else if TextHasPrefix(rest, "-x") { token = 5; arrow = cast(u32)#char "x"; dashed = false }
     if token < 0 { return .UNSUPPORTED }
     if token == 0 { rest = rest[4:rest.count] }
     else if token == 1 { rest = rest[3:rest.count] }
@@ -132,7 +132,7 @@ MessageEvent :: (line: string, event: *Event) -> Error {
     if to.at < 0 { return ErrorFromInt(to.at) }
     LabelSet(*event.to_id, to.value)
     text := TrimStart(rest)
-    if !StartsWith(text, ":") { return .UNSUPPORTED }
+    if !TextHasPrefix(text, ":") { return .UNSUPPORTED }
     value := Trim(text[1:text.count]); status := CheckLabel(value)
     if status != .NONE { return status }
     LabelSet(*event.text, value); event.kind = .MESSAGE

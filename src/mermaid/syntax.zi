@@ -7,17 +7,17 @@ Statements :: (source: string, output: *Vec(Statement), count: *s32) -> Error {
     class_body := false
     header: string = ""
     while cursor <= source.count {
-        end := IndexByteFrom(source, cursor, cast(u8)10)
+        end := TextFind(source, "\n", cursor)
         if end < 0 { end = cast(s64)source.count }
         line := Trim(source[cursor:end])
         cursor = end + 1
-        if StartsWith(line, "%%{") { return .UNSUPPORTED }
-        if StartsWith(line, "%%") { continue }
+        if TextHasPrefix(line, "%%{") { return .UNSUPPORTED }
+        if TextHasPrefix(line, "%%") { continue }
         if HasEntity(line) { return .UNSUPPORTED }
         rest := line
         while rest.count > 0 {
             if header == "classDiagram" &&
-               (class_body || (StartsWith(rest, "class ") && HasOpenBraceBeforeSemicolon(rest))) {
+               (class_body || (TextHasPrefix(rest, "class ") && HasOpenBraceBeforeSemicolon(rest))) {
                 class_body = rest != "}"
                 VecPush(<<output, Range(source, rest))
                 count.* += 1
@@ -69,15 +69,6 @@ Range :: (source: string, value: string) -> Statement {
     return result
 }
 
-IndexByteFrom :: (value: string, start: s64, wanted: u8) -> s64 {
-    index := start
-    while index < value.count {
-        if value[index] == wanted { return index }
-        index += 1
-    }
-    return -1
-}
-
 HasEntity :: (line: string) -> bool {
     index: s64 = 0
     while index < line.count {
@@ -93,7 +84,7 @@ HasEntity :: (line: string) -> bool {
 }
 
 HasOpenBraceBeforeSemicolon :: (value: string) -> bool {
-    declaration_end := IndexByte(value, cast(u8)#char "{")
+    declaration_end := TextFind(value, "{")
     if declaration_end < 0 { return false }
-    return IndexByte(value[0:declaration_end], cast(u8)#char ";") < 0
+    return TextFind(value[0:declaration_end], ";") < 0
 }

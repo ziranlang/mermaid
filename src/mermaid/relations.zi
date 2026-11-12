@@ -21,7 +21,7 @@ ParseRelations :: (header: string, source: string, statements: []Statement, coun
                     status := Attribute(line, *member)
                     if status != .NONE { return status }
                 } else {
-                    if ContainsByte(line, cast(u8)#char "{") || ContainsByte(line, cast(u8)#char "}") { return .UNSUPPORTED }
+                    if TextContains(line, "{") || TextContains(line, "}") { return .UNSUPPORTED }
                     status := CheckLabel(line)
                     if status != .NONE { return status }
                     if !LabelSet(*member, line) { return .UNSUPPORTED }
@@ -32,13 +32,13 @@ ParseRelations :: (header: string, source: string, statements: []Statement, coun
             }
             continue
         }
-        if StartsWith(line, "direction ") {
+        if TextHasPrefix(line, "direction ") {
             if direction { return .UNSUPPORTED }
             parsed := ParseDirection(Trim(line[10:line.count]))
             if cast(s32)parsed < 0 { return .UNSUPPORTED }
             graph.direction = parsed; direction = true; continue
         }
-        declaration := !er && StartsWith(line, "class ")
+        declaration := !er && TextHasPrefix(line, "class ")
         rest := line
         if declaration { rest = rest[6:rest.count] }
         id := ParseIdentifier(rest); rest = id.rest
@@ -47,7 +47,7 @@ ParseRelations :: (header: string, source: string, statements: []Statement, coun
         rest = TrimStart(rest)
         title := id.value == "accTitle" || er && CaseInsensitiveEqual(id.value, "accTitle")
         description := id.value == "accDescr" || er && CaseInsensitiveEqual(id.value, "accDescr")
-        if !declaration && ((title && StartsWith(rest, ":")) || (description && (StartsWith(rest, ":") || StartsWith(rest, "{")))) { return .UNSUPPORTED }
+        if !declaration && ((title && TextHasPrefix(rest, ":")) || (description && (TextHasPrefix(rest, ":") || TextHasPrefix(rest, "{")))) { return .UNSUPPORTED }
         from := GraphNode(graph, id.value)
         if from < 0 { return ErrorFromInt(from) }
         if (rest == "{") && (er || declaration) { block = from; continue }
@@ -55,7 +55,7 @@ ParseRelations :: (header: string, source: string, statements: []Statement, coun
             if rest.count != 0 { return .UNSUPPORTED }
             continue
         }
-        if !er && StartsWith(rest, ":") && !StartsWith(rest, "::") {
+        if !er && TextHasPrefix(rest, ":") && !TextHasPrefix(rest, "::") {
             member := Trim(rest[1:rest.count])
             status := CheckLabel(member)
             if status != .NONE { return status }
@@ -104,10 +104,10 @@ ParseRelations :: (header: string, source: string, statements: []Statement, coun
             else if left == "o" { source_tip = cast(u32)0x25c7 }
             else { return .UNSUPPORTED }
             target_tip = 0x2500
-            if StartsWith(rest, "|>") { target_tip = cast(u32)0x25c1; rest = rest[2:rest.count] }
-            else if StartsWith(rest, ">") { target_tip = cast(u32)0x25c4; rest = rest[1:rest.count] }
-            else if StartsWith(rest, "*") { target_tip = cast(u32)0x25c6; rest = rest[1:rest.count] }
-            else if StartsWith(rest, "o") {
+            if TextHasPrefix(rest, "|>") { target_tip = cast(u32)0x25c1; rest = rest[2:rest.count] }
+            else if TextHasPrefix(rest, ">") { target_tip = cast(u32)0x25c4; rest = rest[1:rest.count] }
+            else if TextHasPrefix(rest, "*") { target_tip = cast(u32)0x25c6; rest = rest[1:rest.count] }
+            else if TextHasPrefix(rest, "o") {
                 if !(rest.count > 1 && IsIdentifierByte(rest[1])) { target_tip = cast(u32)0x25c7; rest = rest[1:rest.count] }
             }
             cardinality := Cardinality(rest, *target_card); rest = cardinality.rest
@@ -120,9 +120,9 @@ ParseRelations :: (header: string, source: string, statements: []Statement, coun
         if to < 0 { return ErrorFromInt(to) }
         rest = Trim(rest)
         label: Label
-        if StartsWith(rest, ":") && !StartsWith(rest, "::") {
+        if TextHasPrefix(rest, ":") && !TextHasPrefix(rest, "::") {
             text := Trim(rest[1:rest.count])
-            if er && ContainsByte(text, cast(u8)#char "\"") { return .UNSUPPORTED }
+            if er && TextContains(text, "\"") { return .UNSUPPORTED }
             status := CheckLabel(text)
             if status != .NONE { return status }
             if !LabelSet(*label, text) { return .UNSUPPORTED }
@@ -168,8 +168,8 @@ CaseInsensitiveEqual :: (value: string, expected: string) -> bool {
 
 Cardinality :: (source: string, output: *Label) -> Cursor {
     rest := TrimStart(source)
-    if StartsWith(rest, "\"") {
-        closing := IndexByte(rest[1:rest.count], cast(u8)#char "\"")
+    if TextHasPrefix(rest, "\"") {
+        closing := TextFind(rest[1:rest.count], "\"")
         if closing < 0 { return .{at = ErrorInt(.UNSUPPORTED)} }
         value := rest[1:1 + closing]
         status := CheckLabel(value)
@@ -190,9 +190,9 @@ Attribute :: (line: string, output: *Label) -> Error {
     if name.at < 0 { return ErrorFromInt(name.at) }
     keys: string = Trim(rest)
     comment: string = ""
-    quote := IndexByte(keys, cast(u8)#char "\"")
+    quote := TextFind(keys, "\"")
     if quote >= 0 {
-        if quote == keys.count - 1 || !EndsWith(keys, "\"") || ContainsByte(keys[quote + 1:keys.count - 1], cast(u8)#char "\"") { return .UNSUPPORTED }
+        if quote == keys.count - 1 || !TextHasSuffix(keys, "\"") || TextContains(keys[quote + 1:keys.count - 1], "\"") { return .UNSUPPORTED }
         comment = keys[quote + 1:keys.count - 1]
         status := CheckLabel(comment)
         if status != .NONE { return status }

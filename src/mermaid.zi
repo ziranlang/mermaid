@@ -30,6 +30,7 @@ RenderedGrid :: struct {
 #scope_module
 using Utf8 :: #import "std/utf8";
 Whitespace :: #import "std/unicode";
+using TextTools :: #import "std/text_tools";
 #load "mermaid/types.zi";
 #load "mermaid/width.zi";
 #load "mermaid/strings.zi";
