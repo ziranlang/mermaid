@@ -6,7 +6,7 @@ preserves semantic node, edge, and text roles and returns errors for unsupported
 syntax, unsafe terminal labels, or exceeded limits.
 
 ```sh
-ziran add https://github.com/ziranlang/mermaid.git
+ziran add https://git.waozi.xyz/ziranlang/mermaid.git
 ```
 
 ```zi

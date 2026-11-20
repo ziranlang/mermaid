@@ -3,8 +3,8 @@ name = "mermaid"
 module_roots = ["src", "tests"]
 
 [toolchain]
-git = "https://github.com/ziranlang/ziran.git"
-ref = "master"
+git = "https://git.waozi.xyz/ziranlang/ziran.git"
+ref = "71c0eec79ddb3514b6b8a3363b579967801e64b8"
 
 [exports]
 mermaid = "src/mermaid.zi"
