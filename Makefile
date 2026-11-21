@@ -12,4 +12,4 @@ test: check
 	cd build/test-go && GO111MODULE=off go build -o mermaid_test .
 	build/test-go/mermaid_test
 	$(ZIRAN) bundle --project $(LOCKED) --entry mermaid_test:main -o build/mermaid-test.zx tests/mermaid_test.zi
-	$(ZIRAN) run --project $(LOCKED) --vm build/mermaid-test.zx
+	$(ZIRAN) run --project $(LOCKED) --backend engine build/mermaid-test.zx

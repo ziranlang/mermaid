@@ -8,8 +8,8 @@
     "name": "mermaid"
   },
   "toolchain": {
-    "commit": "71c0eec79ddb3514b6b8a3363b579967801e64b8",
-    "ref": "71c0eec79ddb3514b6b8a3363b579967801e64b8",
+    "commit": "5db3d3c39425d5dfe4bfe4a84e6f6e2e5a810ad0",
+    "ref": "5db3d3c39425d5dfe4bfe4a84e6f6e2e5a810ad0",
     "url": "https://git.waozi.xyz/ziranlang/ziran.git"
   }
 }
